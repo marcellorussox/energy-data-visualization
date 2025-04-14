@@ -1,0 +1,228 @@
+# Energy Data Visualization Project
+
+**Author**: Marcello Russo **Date**: `r Sys.Date()`
+
+------------------------------------------------------------------------
+
+## Setup
+
+Load libraries and dataset.
+
+```{r setup}
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+library(ggrepel) # For non-overlapping labels
+library(countrycode) # To assign continents
+library(tidyr)
+
+# Load data
+tuesdata <- tidytuesdayR::tt_load(2023, week = 23)
+
+energy_data <- tuesdata$`owid-energy`
+
+# Add continent column (if not already present)
+energy_data <- energy_data %>%
+  mutate(continent = countrycode(country, "country.name", "continent"))
+```
+
+------------------------------------------------------------------------
+
+## Plot 1: GDP vs. Per Capita Energy Consumption
+
+**Question**: Is there a relationship between GDP and per capita energy consumption?
+
+```{r plot1}
+# Filter latest year and remove NA
+latest_year <- max(energy_data$year, na.rm = TRUE)
+plot1_data <- energy_data %>%
+  filter(year == latest_year) %>%
+  drop_na(gdp, energy_per_capita, fossil_share_energy)
+
+# Scatter plot with enhancements
+ggplot(plot1_data, aes(x = gdp, y = energy_per_capita, color = fossil_share_energy)) +
+  geom_point(alpha = 0.7) +
+  geom_text_repel(
+    data = subset(plot1_data, energy_per_capita > quantile(energy_per_capita, 0.9)),
+    aes(label = country), size = 3
+  ) +
+  scale_color_viridis_c(name = "Fossil Fuel Share (%)") +
+  labs(
+    title = "GDP vs. Energy Consumption per Capita",
+    x = "GDP (inflation-adjusted)", 
+    y = "Energy Consumption per Capita (kWh)"
+  ) +
+  theme_minimal()
+```
+
+**Explanation**:\
+- We use a **scatter plot** to explore the relationship between GDP and energy consumption.\
+- Points are colored by `fossil_share_energy` to show how fossil fuel dependency influences the trend.\
+- Outliers (top 10% energy consumers) are labeled using `ggrepel` for clarity.
+
+------------------------------------------------------------------------
+
+## Plot 2: Solar and Wind Energy Leaders
+
+**Question**: Which countries lead in solar and wind energy adoption?
+
+```{r plot2}
+# Get latest year's data for top 10 solar/wind countries
+plot2_data <- energy_data %>%
+  filter(year == latest_year) %>%
+  select(country, solar_share_elec, wind_share_elec) %>%
+  pivot_longer(cols = -country, names_to = "source", values_to = "share") %>%
+  group_by(source) %>%
+  slice_max(order_by = share, n = 10) 
+
+# Horizontal dodged bar chart
+ggplot(plot2_data, aes(x = share, y = country, fill = source)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(
+    values = c("solar_share_elec" = "#FFD700", "wind_share_elec" = "#4682B4"),
+    labels = c("Solar", "Wind")
+  ) +
+  labs(
+    title = "Top 10 Countries in Solar and Wind Energy Adoption",
+    x = "Share of Electricity Generation (%)", 
+    y = ""
+  ) +
+  theme_minimal() +
+  theme(legend.position = "top")
+```
+
+**Explanation**:\
+- A **dodged bar chart** compares the top 10 countries for solar and wind energy.\
+- Data is pivoted to long format for easy faceting.\
+- Gold (`#FFD700`) represents solar, blue (`#4682B4`) represents wind.
+
+------------------------------------------------------------------------
+
+## Plot 3: Population Growth vs. Energy Demand
+
+**Question**: Do countries with higher population growth experience larger changes in energy demand?
+
+```{r plot3}
+# Calculate percentage changes over 10 years
+plot3_data <- energy_data %>%
+  group_by(country) %>%
+  filter(year >= latest_year - 10) %>%
+  summarise(
+    pop_change = (last(population) - first(population)) / first(population) * 100,
+    demand_change = (last(electricity_demand) - first(electricity_demand)) / first(electricity_demand) * 100
+  ) %>%
+  drop_na()
+
+# Scatter plot with regression
+ggplot(plot3_data, aes(x = pop_change, y = demand_change)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", color = "red", se = FALSE) +
+  labs(
+    title = "Population Growth vs. Electricity Demand Change",
+    x = "Population Change (%) (10-year delta)",
+    y = "Electricity Demand Change (%)"
+  ) +
+  theme_minimal()
+```
+
+**Explanation**:\
+- Percentage changes in population and electricity demand are calculated over a 10-year window.\
+- A **regression line** (`geom_smooth`) shows the overall trend.\
+- Points represent individual countries.
+
+------------------------------------------------------------------------
+
+## Plot 4: Energy Consumption vs. Efficiency
+
+**Question**: Do countries with high per capita energy consumption also have high energy efficiency?
+
+```{r plot4}
+# Calculate medians for quadrants
+median_energy <- median(plot1_data$energy_per_capita, na.rm = TRUE)
+median_efficiency <- median(plot1_data$energy_per_gdp, na.rm = TRUE)
+
+ggplot(plot1_data, aes(x = energy_per_capita, y = energy_per_gdp, color = continent)) +
+  geom_point() +
+  geom_hline(yintercept = median_efficiency, linetype = "dashed") +
+  geom_vline(xintercept = median_energy, linetype = "dashed") +
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "Energy Consumption vs. Efficiency",
+    x = "Energy per Capita (kWh)",
+    y = "Energy per GDP (kWh/$)"
+  ) +
+  theme_minimal()
+```
+
+**Explanation**:\
+- **Quadrant analysis** splits the plot into four regions using median values.\
+- Points are colored by continent to highlight regional patterns.\
+- High consumption + low efficiency (top-left quadrant) may indicate wasteful economies.
+
+------------------------------------------------------------------------
+
+## Plot 5: Carbon Intensity vs. Fossil Dependency
+
+**Question**: Which countries have high carbon intensity despite low fossil fuel dependency?
+
+```{r plot5}
+plot5_data <- energy_data %>%
+  filter(year == latest_year) %>%
+  drop_na(carbon_intensity_elec, fossil_share_energy)
+
+ggplot(plot5_data, aes(x = fossil_share_energy, y = carbon_intensity_elec, color = continent)) +
+  geom_point() +
+  geom_text_repel(
+    data = subset(plot5_data, carbon_intensity_elec > 500 & fossil_share_energy < 50),
+    aes(label = country), size = 3
+  ) +
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "Carbon Intensity vs. Fossil Fuel Dependency",
+    x = "Fossil Fuel Share of Energy (%)",
+    y = "Carbon Intensity (gCO₂/kWh)"
+  ) +
+  theme_minimal()
+```
+
+**Explanation**:\
+- Outliers (e.g., countries with `carbon_intensity_elec > 500` but `fossil_share_energy < 50`) are labeled.\
+- These countries may rely on coal despite having "low" fossil fuel shares.
+
+------------------------------------------------------------------------
+
+## Plot 6: Energy Mix by Continent
+
+**Question**: How does the energy mix vary by continent?
+
+```{r plot6}
+plot6_data <- energy_data %>%
+  filter(year == latest_year) %>%
+  group_by(continent) %>%
+  summarise(
+    fossil = mean(fossil_share_energy, na.rm = TRUE),
+    renewables = mean(renewables_share_energy, na.rm = TRUE),
+    nuclear = mean(nuclear_share_energy, na.rm = TRUE)
+  ) %>%
+  pivot_longer(cols = -continent, names_to = "source", values_to = "share")
+
+ggplot(plot6_data, aes(x = continent, y = share, fill = source)) +
+  geom_col(position = "fill") +
+  scale_fill_manual(values = c("fossil" = "#E69F00", "renewables" = "#009E73", "nuclear" = "#0072B2")) +
+  labs(
+    title = "Energy Mix by Continent",
+    x = "",
+    y = "Proportion of Energy Mix"
+  ) +
+  theme_minimal()
+```
+
+**Explanation**:\
+- A **stacked bar chart** shows the proportional contribution of each energy source.\
+- Fossil fuels dominate in some continents, while others have more balanced mixes.
+
+------------------------------------------------------------------------
+
+## Saving the Notebook
+
+Render the notebook to HTML/PDF by clicking "Knit" in RStudio.
