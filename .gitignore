@@ -1,3 +1,6 @@
+.idea
+plots
+
 # History files
 .Rhistory
 .Rapp.history
