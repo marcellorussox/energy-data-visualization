@@ -93,26 +93,52 @@ get_continent <- function(country) {
 **Question**: Is there a relationship between GDP and per capita energy consumption?
 
 ```{r plot1}
-# Filter latest year and remove NA
-latest_year <- max(energy_data$year, na.rm = TRUE)
-plot1_data <- energy_data %>%
-  filter(year == latest_year) %>%
-  drop_na(gdp, energy_per_capita, fossil_share_energy)
+# Data processing corretto
+plot1data <- energy_data %>%
+  filter(year == 2018) %>%
+  mutate(continent = sapply(country, get_continent)) %>%
+  filter(continent != "Unknown") %>%
+  mutate(
+    gdp_per_capita = gdp / population
+  ) %>%
+  filter(
+    !is.na(gdp), 
+    !is.na(population),
+    !is.na(energy_per_capita),
+    !is.na(continent)
+  )
 
-# Scatter plot with enhancements
-ggplot(plot1_data, aes(x = gdp, y = energy_per_capita, color = fossil_share_energy)) +
-  geom_point(alpha = 0.7) +
-  geom_text_repel(
-    data = subset(plot1_data, energy_per_capita > quantile(energy_per_capita, 0.9)),
-    aes(label = country), size = 3
+# Plot con scala lineare
+ggplot(plot1data, aes(x = gdp_per_capita, y = energy_per_capita, color = continent)) +
+  geom_point(alpha = 0.8, size = 3) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", linetype = "dashed") +
+  scale_x_log10(
+    name = "GDP per capita (USD, log scale)",
+    labels = scales::dollar_format(accuracy = 1),
+    breaks = c(200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000),
+    limits = c(200, 150000)
   ) +
-  scale_color_viridis_c(name = "Fossil Fuel Share (%)") +
+  scale_y_log10(
+    name = "Energy use per capita (kWh, log scale)",
+    labels = scales::comma_format(),
+    breaks = c(100, 300, 1000, 3000, 10000, 30000, 100000, 200000),
+    limits = c(100, 200000)
+  ) +
+  scale_color_brewer(palette = "Set1") +
   labs(
-    title = "GDP vs. Energy Consumption per Capita",
-    x = "GDP (inflation-adjusted)", 
-    y = "Energy Consumption per Capita (kWh)"
+    title = "Energy Consumption vs Economic Output (2018)",
+    subtitle = "Log-log scale clarifies the power-law distribution",
+    color = "Continent"
   ) +
-  theme_minimal()
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    plot.title.position = "plot",
+    plot.margin = margin(1, 1, 1, 1, "cm"),
+    axis.title = element_text(face = "bold")
+  )
+
+ggsave("plots/energy_gdp_plot.png", width = 10, height = 7, dpi = 300, bg = "white")
 ```
 
 **Explanation**:\
