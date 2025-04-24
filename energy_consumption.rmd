@@ -153,28 +153,64 @@ ggsave("plots/energy_gdp_plot.png", width = 10, height = 7, dpi = 300, bg = "whi
 **Question**: Which countries lead in solar and wind energy adoption?
 
 ```{r plot2}
-# Get latest year's data for top 10 solar/wind countries
-plot2_data <- energy_data %>%
-  filter(year == latest_year) %>%
-  select(country, solar_share_elec, wind_share_elec) %>%
-  pivot_longer(cols = -country, names_to = "source", values_to = "share") %>%
-  group_by(source) %>%
-  slice_max(order_by = share, n = 10) 
+# Step 1: dati top 10
+top_10 <- energy_data %>%
+  filter(year == 2022) %>%
+  mutate(
+    total_share = solar_share_elec + wind_share_elec
+  ) %>%
+  filter(!is.na(total_share)) %>%
+  slice_max(order_by = total_share, n = 10) %>%
+  select(country, solar_share_elec, wind_share_elec, total_share)
 
-# Horizontal dodged bar chart
-ggplot(plot2_data, aes(x = share, y = country, fill = source)) +
-  geom_col(position = "dodge") +
-  scale_fill_manual(
-    values = c("solar_share_elec" = "#FFD700", "wind_share_elec" = "#4682B4"),
-    labels = c("Solar", "Wind")
+# Step 2: long format
+top_10_long <- top_10 %>%
+  pivot_longer(
+    cols = c(solar_share_elec, wind_share_elec, total_share),
+    names_to = "source",
+    values_to = "value"
+  ) %>%
+  mutate(
+    source = recode(source,
+                    "solar_share_elec" = "Solar",
+                    "wind_share_elec" = "Wind",
+                    "total_share" = "Total")
+  )
+
+# Step 3: assegnare y numerico per posizionamento perfetto
+top_10_long <- top_10_long %>%
+  mutate(country = factor(country, levels = top_10$country[order(top_10$total_share)])) %>%
+  mutate(y_numeric = as.numeric(country)) %>%
+  mutate(y_offset = case_when(
+    source == "Solar" ~ y_numeric + 0.2,
+    source == "Wind"  ~ y_numeric,
+    source == "Total" ~ y_numeric - 0.2
+  ))
+
+# Step 4: plot
+ggplot(top_10_long, aes(x = value, y = y_offset, color = source)) +
+  geom_segment(aes(x = 0, xend = value, y = y_offset, yend = y_offset), linewidth = 0.7) +
+  geom_point(size = 3) +
+  scale_y_continuous(
+    breaks = 1:10,
+    labels = levels(top_10_long$country),
+    expand = expansion(add = 0.5)
   ) +
+  scale_color_brewer(palette = "Dark2") +
   labs(
-    title = "Top 10 Countries in Solar and Wind Energy Adoption",
-    x = "Share of Electricity Generation (%)", 
-    y = ""
+    title = "Top 10 Countries in Share of Renewable Energy (2022)",
+    x = "Share of electricity (%)",
+    y = NULL,
+    color = "Source"
   ) +
   theme_minimal() +
-  theme(legend.position = "top")
+  theme(
+    legend.position = "bottom",
+    axis.text.y = element_text(face = "bold"),
+    plot.title = element_text(face = "bold")
+  )
+
+ggsave("plots/renawable_share_top10.png", width = 10, height = 7, dpi = 300, bg = "white")
 ```
 
 **Explanation**:\
