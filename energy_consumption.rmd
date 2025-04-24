@@ -220,31 +220,35 @@ ggsave("plots/renawable_share_top10.png", width = 10, height = 7, dpi = 300, bg 
 
 ------------------------------------------------------------------------
 
-## Plot 3: Population Growth vs. Energy Demand
+## Plot 3: Development of Renewable Energy in Denmark vs Italy
 
 **Question**: Do countries with higher population growth experience larger changes in energy demand?
 
 ```{r plot3}
-# Calculate percentage changes over 10 years
-plot3_data <- energy_data %>%
-  group_by(country) %>%
-  filter(year >= latest_year - 10) %>%
-  summarise(
-    pop_change = (last(population) - first(population)) / first(population) * 100,
-    demand_change = (last(electricity_demand) - first(electricity_demand)) / first(electricity_demand) * 100
-  ) %>%
-  drop_na()
+# Filter data for Denmark and Italy and calculate renewable share
+plot3 <- energy_data %>%
+  filter(country %in% c("Denmark", "Italy", "Spain")) %>%
+  mutate(renewable_share = solar_share_elec + wind_share_elec) %>%
+  drop_na(year, renewable_share)
 
-# Scatter plot with regression
-ggplot(plot3_data, aes(x = pop_change, y = demand_change)) +
-  geom_point(alpha = 0.6) +
-  geom_smooth(method = "lm", color = "red", se = FALSE) +
-  labs(
-    title = "Population Growth vs. Electricity Demand Change",
-    x = "Population Change (%) (10-year delta)",
-    y = "Electricity Demand Change (%)"
+# Create line plot
+ggplot(plot3, aes(x = year, y = renewable_share, color = country)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +  # Add points for better visibility of data points
+  scale_color_manual(values = c("Denmark" = "red", "Italy" = "blue", "Spain" = "yellow")) +
+  labs(title = "Renewable Energy Share (Solar + Wind) Over Time in Denmark and Italy",
+       x = "Year",
+       y = "Share of Electricity Generation (%)",
+       color = "Country") +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title = element_text(size = 12)
   ) +
-  theme_minimal()
+  scale_x_continuous(breaks = seq(min(plot3$year), max(plot3$year), by = 5))  # Adjust x-axis breaks
+
+ggsave("plots/renewable_denmark_italy.png", width = 10, height = 7, dpi = 300, bg = "white")
 ```
 
 **Explanation**:\
