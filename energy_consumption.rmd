@@ -12,18 +12,78 @@ Load libraries and dataset.
 # Load required libraries
 library(ggplot2)
 library(dplyr)
-library(ggrepel) # For non-overlapping labels
-library(countrycode) # To assign continents
+library(tidytuesdayR)
+library(scales)
 library(tidyr)
+library(forcats)
+library(ggrepel)
 
 # Load data
 tuesdata <- tidytuesdayR::tt_load(2023, week = 23)
 
-energy_data <- tuesdata$`owid-energy`
-
-# Add continent column (if not already present)
+energy_data <- tuesdata$'owid-energy'
 energy_data <- energy_data %>%
-  mutate(continent = countrycode(country, "country.name", "continent"))
+  filter(
+    !grepl("\\(", country),         # esclude "Africa (BP)", ecc.
+    !grepl("-", country),           # esclude "IEO - Africa (EIA)", ecc.
+    !country %in% c("Africa", "Asia", "Europe", "North America", "South America", "Oceania", "World"),
+    !grepl("G7|G20|OECD|OPEC|income|region|Union|BP|EIA|Ember", country)
+  )
+
+get_continent <- function(country) {
+  europe <- c("Italy", "France", "Germany", "Spain", "Portugal", "Netherlands", "Belgium",
+              "Sweden", "Norway", "Finland", "Denmark", "Austria", "Switzerland", "Greece",
+              "Ireland", "Poland", "Czechia", "Hungary", "Slovakia", "Slovenia",
+              "Croatia", "Romania", "Bulgaria", "Estonia", "Latvia", "Lithuania", "Malta",
+              "Cyprus", "Luxembourg", "Iceland", "Albania", "Belarus", "Bosnia and Herzegovina",
+              "North Macedonia", "Moldova", "Montenegro", "Serbia", "Ukraine", "United Kingdom")
+
+  asia <- c("China", "Japan", "South Korea", "India", "Indonesia", "Malaysia", "Thailand",
+            "Vietnam", "Philippines", "Bangladesh", "Pakistan", "Sri Lanka", "Nepal", "Iran",
+            "Iraq", "Israel", "Kazakhstan", "Kuwait", "Kyrgyzstan", "Laos", "Lebanon", "Mongolia",
+            "Myanmar", "North Korea", "Oman", "Palestine", "Saudi Arabia", "Singapore", "Syria",
+            "Taiwan", "Tajikistan", "Timor", "Turkey", "Turkmenistan", "United Arab Emirates",
+            "Uzbekistan", "Yemen", "Armenia", "Georgia", "Azerbaijan", "Jordan", "Qatar", "Bahrain",
+            "Afghanistan", "Bhutan", "Maldives", "Thailand")
+
+  africa <- c("South Africa", "Nigeria", "Egypt", "Kenya", "Morocco", "Ghana", "Algeria",
+              "Tunisia", "Ethiopia", "Ivory Coast", "Senegal", "Angola", "Botswana", "Cameroon",
+              "Congo", "Democratic Republic of Congo", "Gabon", "Gambia", "Guinea", "Guinea-Bissau",
+              "Madagascar", "Malawi", "Mali", "Mauritania", "Mauritius", "Mozambique", "Namibia",
+              "Niger", "Rwanda", "Seychelles", "Sierra Leone", "Somalia", "Sudan", "Tanzania",
+              "Togo", "Uganda", "Zambia", "Zimbabwe", "Benin", "Burkina Faso", "Burundi", "Chad",
+              "Comoros", "Djibouti", "Eritrea", "Equatorial Guinea", "Eswatini", "Lesotho",
+              "Liberia", "Libya", "Sao Tome and Principe", "South Sudan", "Western Sahara")
+
+  north_america <- c("United States", "Canada", "Mexico", "Bahamas", "Barbados", "Belize",
+                     "Costa Rica", "Cuba", "Dominica", "Dominican Republic", "El Salvador",
+                     "Grenada", "Guatemala", "Haiti", "Honduras", "Jamaica", "Nicaragua",
+                     "Panama", "Saint Kitts and Nevis", "Saint Lucia", "Saint Vincent and the Grenadines",
+                     "Trinidad and Tobago")
+
+  south_america <- c("Brazil", "Argentina", "Chile", "Colombia", "Peru", "Uruguay", "Ecuador",
+                     "Paraguay", "Venezuela", "Bolivia", "Guyana", "Suriname")
+
+  oceania <- c("Australia", "New Zealand", "Fiji", "Kiribati", "Marshall Islands", "Micronesia",
+               "Nauru", "Palau", "Papua New Guinea", "Samoa", "Solomon Islands", "Tonga",
+               "Tuvalu", "Vanuatu")
+
+  if (country %in% europe) {
+    return("Europe")
+  } else if (country %in% asia) {
+    return("Asia")
+  } else if (country %in% africa) {
+    return("Africa")
+  } else if (country %in% north_america) {
+    return("North America")
+  } else if (country %in% south_america) {
+    return("South America")
+  } else if (country %in% oceania) {
+    return("Oceania")
+  } else {
+    return("Unknown")
+  }
+}
 ```
 
 ------------------------------------------------------------------------
