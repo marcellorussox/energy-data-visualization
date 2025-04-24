@@ -293,7 +293,9 @@ ggplot(plot1_data, aes(x = energy_per_capita, y = energy_per_gdp, color = contin
 
 ```{r plot5}
 plot5_data <- energy_data %>%
-  filter(year == latest_year) %>%
+  filter(year == 2018) %>%
+  mutate(continent = sapply(country, get_continent)) %>%
+  filter(continent != "Unknown") %>%
   drop_na(carbon_intensity_elec, fossil_share_energy)
 
 ggplot(plot5_data, aes(x = fossil_share_energy, y = carbon_intensity_elec, color = continent)) +
