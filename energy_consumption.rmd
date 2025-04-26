@@ -17,6 +17,8 @@ library(scales)
 library(tidyr)
 library(forcats)
 library(ggrepel)
+library(rnaturalearth)
+library(sf)
 
 # Load data
 tuesdata <- tidytuesdayR::tt_load(2023, week = 23)
@@ -88,11 +90,63 @@ get_continent <- function(country) {
 
 ------------------------------------------------------------------------
 
-## Plot 1: GDP vs. Per Capita Energy Consumption
+## Plot 1: Top 10 Energy Consumers (2018)
 
 **Question**: Is there a relationship between GDP and per capita energy consumption?
 
 ```{r plot1}
+# Preparazione dati
+top10_total <- energy_data %>%
+  filter(year == 2018) %>%
+  mutate(
+    energy_per_capita = round(energy_per_capita, 0),
+    label_text = paste0(scales::comma(energy_per_capita), " kWh/person")  # Modifica qui
+  ) %>%
+  arrange(desc(primary_energy_consumption)) %>%
+  slice_head(n = 10)
+
+# Creazione del plot
+ggplot(top10_total, aes(x = primary_energy_consumption/1000, 
+                       y = reorder(country, primary_energy_consumption))) +
+  geom_col(fill = "#1f78b4", width = 0.7, alpha = 0.8) +
+  geom_text(
+    aes(label = label_text),
+    hjust = -0.1,
+    color = "black",
+    size = 4,
+    fontface = "bold"
+  ) +
+  scale_x_continuous(
+    name = "Total Energy Consumption (Thousand TWh)",
+    expand = expansion(mult = c(0, 0.3)),
+    labels = scales::comma_format()
+  ) +
+  labs(
+    title = "Top 10 Energy Consumers (2018)",
+    y = "",
+    subtitle = "Energy per capita calculated as total consumption divided by population"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.major.y = element_blank(),
+    axis.text.y = element_text(face = "bold", size = 11),
+    plot.title = element_text(face = "bold", size = 14),
+    plot.caption = element_text(color = "gray40", hjust = 0)
+  )
+
+ggsave("plots/top10_energy_consumers.png", width = 12, height = 7, dpi = 300)
+```
+
+**Explanation**:\
+- We use a **scatter plot** to explore the relationship between GDP and energy consumption.\
+- Points are colored by `fossil_share_energy` to show how fossil fuel dependency influences the trend.\
+- Outliers (top 10% energy consumers) are labeled using `ggrepel` for clarity.
+
+------------------------------------------------------------------------
+
+## Plot 2: GDP vs. Per Capita Energy Consumption
+
+```{r plot2}
 # Data processing corretto
 plot1data <- energy_data %>%
   filter(year == 2018) %>%
@@ -141,32 +195,170 @@ ggplot(plot1data, aes(x = gdp_per_capita, y = energy_per_capita, color = contine
 ggsave("plots/energy_gdp_plot.png", width = 10, height = 7, dpi = 300, bg = "white")
 ```
 
-**Explanation**:\
-- We use a **scatter plot** to explore the relationship between GDP and energy consumption.\
-- Points are colored by `fossil_share_energy` to show how fossil fuel dependency influences the trend.\
-- Outliers (top 10% energy consumers) are labeled using `ggrepel` for clarity.
+------------------------------------------------------------------------
+
+## Plot 3: Carbon Intensity vs. Fossil Dependency
+
+**Question**: Which countries have high carbon intensity despite low fossil fuel dependency?
+
+```{r plot3}
+plot3_data <- energy_data %>%
+  filter(year == 2018) %>%
+  mutate(continent = sapply(country, get_continent)) %>%
+  filter(continent != "Unknown") %>%
+  drop_na(carbon_intensity_elec, fossil_share_energy)
+
+ggplot(plot3_data, aes(x = fossil_share_energy, y = carbon_intensity_elec, color = continent)) +
+  geom_point() +
+  geom_text_repel(
+    data = subset(plot3_data, carbon_intensity_elec > 500 & fossil_share_energy < 50),
+    aes(label = country), size = 3
+  ) +
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "Carbon Intensity vs. Fossil Fuel Dependency",
+    x = "Fossil Fuel Share of Energy (%)",
+    y = "Carbon Intensity (gCO₂/kWh)"
+  ) +
+  theme_minimal()
+
+ggsave("plots/carbon_fossil_plot.png", width = 10, height = 7, dpi = 300, bg = "white")
+```
 
 ------------------------------------------------------------------------
 
-## Plot 2: Solar and Wind Energy Leaders
+## Plot 4: Distribuzione continua della quota rinnovabile (2018)
+
+```{r plot4}
+renewable_2018 <- energy_data %>%
+  filter(year == 2018) %>%           # Filtra solo l'anno 2018
+  drop_na(renewables_share_elec)     # Rimuove righe con valori mancanti
+
+ggplot(renewable_2018, aes(x = renewables_share_elec)) +
+  geom_density(
+    fill = "#4daf4a", 
+    alpha = 0.3, 
+    color = "#4daf4a", 
+    linewidth = 0.8
+  ) +
+  geom_vline(
+    xintercept = median(renewable_2018$renewables_share_elec),
+    color = "#984ea3",
+    linetype = "dashed",
+    linewidth = 1
+  ) +
+  scale_x_continuous(
+    name = "Quota di energia rinnovabile (%)",
+    limits = c(0, 100),
+    labels = scales::percent_format(scale = 1)
+  ) +
+  scale_y_continuous(
+    name = "Densità",
+    labels = scales::comma_format()
+  ) +
+  labs(
+    title = "Distribuzione continua della quota rinnovabile (2018)",
+    subtitle = paste(
+      "Curva di densità | Mediana =", 
+      round(median(renewable_2018$renewables_share_elec), 1), "%"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    panel.grid.minor = element_blank()
+  )
+
+ggsave("plots/renewable_distribution_plot.png", width = 10, height = 7, dpi = 300, bg = "white")
+```
+
+------------------------------------------------------------------------
+
+## Plot 5: Renewables share map
+
+```{r plot5}
+# 1. Correzione manuale degli ISO codes problematici
+iso_corrections <- tibble(
+  iso_a3 = c("FRA", "NOR", "SMR", "MCO", "LIE", "AND", "CUW", "SXM"),
+  correct_iso = c("FRA", "NOR", "SMR", "MCO", "LIE", "AND", "CUW", "SXM") # Esempio: nessun cambio se già corretti
+)
+
+# 2. Unione dati con correzioni
+energy_map <- world %>%
+  left_join(iso_corrections, by = "iso_a3") %>%
+  mutate(iso_merged = coalesce(correct_iso, iso_a3)) %>%
+  left_join(
+    energy_data %>%
+      filter(year == 2018) %>%
+      select(iso_code, renewables_share_elec),
+    by = c("iso_merged" = "iso_code")
+  ) %>%
+  # 3. Correzione manuale per paesi speciali
+  mutate(
+    renewables_share_elec = case_when(
+      name == "Norway" ~ energy_data$renewables_share_elec[energy_data$country == "Norway" & energy_data$year == 2018],
+      name == "France" ~ energy_data$renewables_share_elec[energy_data$country == "France" & energy_data$year == 2018],
+      TRUE ~ renewables_share_elec
+    )
+  )
+
+# 4. Verifica finale
+missing_after <- energy_map %>% 
+  filter(is.na(renewables_share_elec)) %>% 
+  pull(name) %>% 
+  unique()
+
+cat("Paesi ancora mancanti dopo le correzioni:\n", paste(missing_after, collapse = ", "))
+
+# 5. Creazione mappa
+ggplot(energy_map) +
+  geom_sf(aes(fill = renewables_share_elec), color = "white", size = 0.2) +
+  scale_fill_gradient(
+    name = "Quota rinnovabili (%)",
+    low = "grey90",  
+    high = "#005a32",
+    na.value = "grey70",
+    limits = c(0, 100),
+    labels = scales::percent_format(scale = 1)
+  ) +
+  labs(title = "Quota di energia rinnovabile (2018)") +
+  theme_void()
+
+# Salva in alta risoluzione
+ggsave("world_renewables_map.png", width = 16, height = 9, dpi = 600, bg = "white")
+```
+
+------------------------------------------------------------------------
+
+## Plot 6: Solar and Wind Energy Leaders
 
 **Question**: Which countries lead in solar and wind energy adoption?
 
-```{r plot2}
-# Step 1: dati top 10
-top_10 <- energy_data %>%
-  filter(year == 2022) %>%
-  mutate(
-    total_share = solar_share_elec + wind_share_elec
-  ) %>%
-  filter(!is.na(total_share)) %>%
-  slice_max(order_by = total_share, n = 10) %>%
-  select(country, solar_share_elec, wind_share_elec, total_share)
+```{r plot6}
+# Step 1: Filtra e prepara dati correttamente
+threshold_twh <- 250
 
-# Step 2: long format
-top_10_long <- top_10 %>%
+top_5 <- energy_data %>%
+  filter(year == 2018) %>%
+  filter(
+    renewables_electricity >= threshold_twh,
+    !is.na(renewables_share_elec)
+  ) %>%
+  select(
+    country, 
+    solar_share_elec, 
+    wind_share_elec,
+    hydro_share_elec,
+    other_renewables_share_elec, 
+    renewables_share_elec
+  ) %>%
+  slice_max(order_by = renewables_share_elec, n = 5) %>% 
+  mutate(country = fct_reorder(country, renewables_share_elec, .desc = TRUE))  # Ordine decrescente
+
+# Step 2: Pivot
+top_5_long <- top_5 %>%
   pivot_longer(
-    cols = c(solar_share_elec, wind_share_elec, total_share),
+    cols = -country,
     names_to = "source",
     values_to = "value"
   ) %>%
@@ -174,43 +366,63 @@ top_10_long <- top_10 %>%
     source = recode(source,
                     "solar_share_elec" = "Solar",
                     "wind_share_elec" = "Wind",
-                    "total_share" = "Total")
+                    "hydro_share_elec" = "Hydro",
+                    "other_renewables_share_elec" = "Other",
+                    "renewables_share_elec" = "Total")
   )
 
-# Step 3: assegnare y numerico per posizionamento perfetto
-top_10_long <- top_10_long %>%
-  mutate(country = factor(country, levels = top_10$country[order(top_10$total_share)])) %>%
-  mutate(y_numeric = as.numeric(country)) %>%
-  mutate(y_offset = case_when(
-    source == "Solar" ~ y_numeric + 0.2,
-    source == "Wind"  ~ y_numeric,
-    source == "Total" ~ y_numeric - 0.2
-  ))
+# Step 3: Offset
+top_5_long <- top_5_long %>%
+  mutate(
+    y_offset = case_when(
+      source == "Solar" ~ as.numeric(country) + 0.3,
+      source == "Wind" ~ as.numeric(country) + 0.15,
+      source == "Hydro" ~ as.numeric(country),
+      source == "Other" ~ as.numeric(country) - 0.15,
+      source == "Total" ~ as.numeric(country) - 0.3
+    )
+  )
 
-# Step 4: plot
-ggplot(top_10_long, aes(x = value, y = y_offset, color = source)) +
-  geom_segment(aes(x = 0, xend = value, y = y_offset, yend = y_offset), linewidth = 0.7) +
-  geom_point(size = 3) +
-  scale_y_continuous(
-    breaks = 1:10,
-    labels = levels(top_10_long$country),
-    expand = expansion(add = 0.5)
+# Step 4: Plot con ordinamento corretto
+ggplot(top_5_long, aes(x = value, y = y_offset, color = source)) +
+  geom_segment(aes(x = 0, xend = value, y = y_offset, yend = y_offset), 
+               linewidth = 1.5, alpha = 0.9) +
+  geom_point(size = 4.5, shape = 19) +
+  scale_x_continuous(
+    limits = c(0, 100),
+    breaks = seq(0, 100, 20),
+    name = "Quota di energia rinnovabile (%)",
+    position = "top"
   ) +
-  scale_color_brewer(palette = "Dark2") +
+  scale_y_continuous(
+    breaks = 1:5,
+    labels = levels(top_5$country),  # Usa l'ordinamento del fattore
+    expand = expansion(add = 0.8),
+    sec.axis = dup_axis(name = "")
+  ) +
+  scale_color_manual(
+    name = "Fonte",
+    values = c("Solar" = "#FFB14E",
+               "Wind" = "#aaaaff",
+               "Hydro" = "#0a77B4",
+               "Other" = "#cccc00",
+               "Total" = "#2CA02C")
+  ) +
   labs(
-    title = "Top 10 Countries in Share of Renewable Energy (2022)",
-    x = "Share of electricity (%)",
-    y = NULL,
-    color = "Source"
+    title = "TOP 5 PAESI PER ENERGIA RINNOVABILE (2018)",
+    subtitle = "Threshold: 250 TWh of renewables production"
   ) +
   theme_minimal() +
   theme(
+    axis.text.y.left = element_blank(),
+    axis.text.y.right = element_text(face = "bold", size = 12, margin = margin(l = 10)),
+    axis.title.x.top = element_text(size = 12),
     legend.position = "bottom",
-    axis.text.y = element_text(face = "bold"),
-    plot.title = element_text(face = "bold")
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5, size = 12)
   )
 
-ggsave("plots/renawable_share_top10.png", width = 10, height = 7, dpi = 300, bg = "white")
+ggsave("plots/renewable_leaders_plot.png", width = 12, height = 8, dpi = 300)
 ```
 
 **Explanation**:\
@@ -220,23 +432,22 @@ ggsave("plots/renawable_share_top10.png", width = 10, height = 7, dpi = 300, bg 
 
 ------------------------------------------------------------------------
 
-## Plot 3: Development of Renewable Energy in Denmark vs Italy
+## Plot 7: Development of Renewable Energy in Brazil, Italy and Spain
 
 **Question**: Do countries with higher population growth experience larger changes in energy demand?
 
-```{r plot3}
-# Filter data for Denmark and Italy and calculate renewable share
+```{r plot7}
+# Filter data for Italy, Spain and Poland and calculate renewable share
 plot3 <- energy_data %>%
-  filter(country %in% c("Denmark", "Italy", "Spain")) %>%
-  mutate(renewable_share = solar_share_elec + wind_share_elec) %>%
+  filter(country %in% c("Italy", "Spain", "Poland")) %>%
+  mutate(renewable_share = renewables_share_elec) %>%
   drop_na(year, renewable_share)
 
 # Create line plot
 ggplot(plot3, aes(x = year, y = renewable_share, color = country)) +
-  geom_line(linewidth = 1) +
   geom_point(size = 2) +  # Add points for better visibility of data points
-  scale_color_manual(values = c("Denmark" = "red", "Italy" = "blue", "Spain" = "yellow")) +
-  labs(title = "Renewable Energy Share (Solar + Wind) Over Time in Denmark and Italy",
+  scale_color_manual(values = c("Italy" = "blue", "Spain" = "gold", "Poland" = "red")) +
+  labs(title = "Renewable Energy Share Over Time in Italy, Spain and Poland",
        x = "Year",
        y = "Share of Electricity Generation (%)",
        color = "Country") +
@@ -248,7 +459,7 @@ ggplot(plot3, aes(x = year, y = renewable_share, color = country)) +
   ) +
   scale_x_continuous(breaks = seq(min(plot3$year), max(plot3$year), by = 5))  # Adjust x-axis breaks
 
-ggsave("plots/renewable_denmark_italy.png", width = 10, height = 7, dpi = 300, bg = "white")
+ggsave("plots/renewable_ita_spa_pol.png", width = 10, height = 7, dpi = 300, bg = "white")
 ```
 
 **Explanation**:\
@@ -258,26 +469,69 @@ ggsave("plots/renewable_denmark_italy.png", width = 10, height = 7, dpi = 300, b
 
 ------------------------------------------------------------------------
 
-## Plot 4: Energy Consumption vs. Efficiency
+## Plot 8: Energy Mix by Continent
 
-**Question**: Do countries with high per capita energy consumption also have high energy efficiency?
+**Question**: How does the energy mix vary by continent?
 
-```{r plot4}
-# Calculate medians for quadrants
-median_energy <- median(plot1_data$energy_per_capita, na.rm = TRUE)
-median_efficiency <- median(plot1_data$energy_per_gdp, na.rm = TRUE)
+```{r plot8}
+# Prepara i dati per il lollipop chart
+plot6_lollipop <- energy_data %>% 
+  filter(year == 2018) %>%
+  mutate(continent = sapply(country, get_continent)) %>%
+  filter(continent != "Unknown") %>%
+  group_by(continent) %>%
+  summarise(
+    fossil = mean(fossil_share_energy, na.rm = TRUE),
+    renewables = mean(renewables_share_energy, na.rm = TRUE),
+    nuclear = mean(nuclear_share_energy, na.rm = TRUE)
+  ) %>%
+  pivot_longer(
+    cols = -continent,
+    names_to = "source",
+    values_to = "share"
+  ) %>%
+  mutate(
+    source = factor(source, levels = c("fossil", "renewables", "nuclear")),
+    continent = factor(continent),
+    # Assegna offset verticali per raggruppamento
+    y_offset = case_when(
+      source == "fossil" ~ as.numeric(continent) + 0.2,
+      source == "renewables" ~ as.numeric(continent),
+      source == "nuclear" ~ as.numeric(continent) - 0.2
+    )
+  )
 
-ggplot(plot1_data, aes(x = energy_per_capita, y = energy_per_gdp, color = continent)) +
-  geom_point() +
-  geom_hline(yintercept = median_efficiency, linetype = "dashed") +
-  geom_vline(xintercept = median_energy, linetype = "dashed") +
-  scale_color_brewer(palette = "Set1") +
-  labs(
-    title = "Energy Consumption vs. Efficiency",
-    x = "Energy per Capita (kWh)",
-    y = "Energy per GDP (kWh/$)"
+# Crea il grouped lollipop chart
+ggplot(plot6_lollipop, aes(x = share, y = y_offset, color = source)) +
+  geom_segment(aes(x = 0, xend = share, y = y_offset, yend = y_offset), 
+               linewidth = 0.7, alpha = 0.8) +
+  geom_point(size = 3.5) +
+  scale_y_continuous(
+    breaks = 1:length(unique(plot6_lollipop$continent)),
+    labels = levels(plot6_lollipop$continent),
+    expand = expansion(add = 0.5)
   ) +
-  theme_minimal()
+  scale_color_manual(
+    values = c("fossil" = "#E69F00", 
+               "renewables" = "#009E73", 
+               "nuclear" = "#0072B2"),
+    labels = c("Fossil Fuels", "Renewables", "Nuclear")
+  ) +
+  labs(
+    title = "Energy Mix by Continent (2018)",
+    subtitle = "Grouped lollipop chart showing average energy shares",
+    x = "Share of Energy Mix (%)",
+    y = NULL,
+    color = "Energy Source"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.text.y = element_text(face = "bold", size = 10),
+    panel.grid.major.y = element_blank(),
+    plot.title = element_text(face = "bold", size = 14)
+  )
+
 ```
 
 **Explanation**:\
@@ -287,62 +541,41 @@ ggplot(plot1_data, aes(x = energy_per_capita, y = energy_per_gdp, color = contin
 
 ------------------------------------------------------------------------
 
-## Plot 5: Carbon Intensity vs. Fossil Dependency
+## Plot 9: Nuclear Share Variations
 
-**Question**: Which countries have high carbon intensity despite low fossil fuel dependency?
+**Question**: Quali paesi hanno ridotto/aumentato maggiormente il nucleare nell'ultimo decennio?
 
-```{r plot5}
-plot5_data <- energy_data %>%
-  filter(year == 2018) %>%
-  mutate(continent = sapply(country, get_continent)) %>%
-  filter(continent != "Unknown") %>%
-  drop_na(carbon_intensity_elec, fossil_share_energy)
-
-ggplot(plot5_data, aes(x = fossil_share_energy, y = carbon_intensity_elec, color = continent)) +
-  geom_point() +
-  geom_text_repel(
-    data = subset(plot5_data, carbon_intensity_elec > 500 & fossil_share_energy < 50),
-    aes(label = country), size = 3
+```{r plot9}
+energy_data %>% 
+  filter(year %in% c(1998, 2022)) %>% 
+  group_by(country) %>%
+  reframe(change = (nuclear_share_elec[year == 2022] - nuclear_share_elec[year == 1998])) %>% 
+  filter(change != 0) %>%
+  ggplot(aes(x = change, y = reorder(country, change), fill = change > 0)) +
+  geom_col(width = 0.8) +
+  geom_vline(xintercept = 0, color = "gray40", linewidth = 0.3) +
+  scale_fill_manual(
+    values = c("#ca0020", "#0571b0"),
+    labels = c("Declino", "Crescita"),
+    name = "Direzione"
   ) +
-  scale_color_brewer(palette = "Set1") +
+  scale_x_continuous(
+    labels = scales::label_percent(scale = 1),
+    breaks = seq(-30, 30, 5)
+  ) +
   labs(
-    title = "Carbon Intensity vs. Fossil Fuel Dependency",
-    x = "Fossil Fuel Share of Energy (%)",
-    y = "Carbon Intensity (gCO₂/kWh)"
+    title = "Variazioni nella Quota Nucleare (1998-2018)",
+    subtitle = "Top 10 paesi per variazione assoluta",
+    x = "Variazione percentuale (punti)",
+    y = ""
   ) +
-  theme_minimal()
-```
-
-**Explanation**:\
-- Outliers (e.g., countries with `carbon_intensity_elec > 500` but `fossil_share_energy < 50`) are labeled.\
-- These countries may rely on coal despite having "low" fossil fuel shares.
-
-------------------------------------------------------------------------
-
-## Plot 6: Energy Mix by Continent
-
-**Question**: How does the energy mix vary by continent?
-
-```{r plot6}
-plot6_data <- energy_data %>%
-  filter(year == latest_year) %>%
-  group_by(continent) %>%
-  summarise(
-    fossil = mean(fossil_share_energy, na.rm = TRUE),
-    renewables = mean(renewables_share_energy, na.rm = TRUE),
-    nuclear = mean(nuclear_share_energy, na.rm = TRUE)
-  ) %>%
-  pivot_longer(cols = -continent, names_to = "source", values_to = "share")
-
-ggplot(plot6_data, aes(x = continent, y = share, fill = source)) +
-  geom_col(position = "fill") +
-  scale_fill_manual(values = c("fossil" = "#E69F00", "renewables" = "#009E73", "nuclear" = "#0072B2")) +
-  labs(
-    title = "Energy Mix by Continent",
-    x = "",
-    y = "Proportion of Energy Mix"
-  ) +
-  theme_minimal()
+  theme_minimal() +
+  theme(
+    panel.grid.major.y = element_blank(),
+    legend.position = "top",
+    plot.title = element_text(face = "bold", size = 14),
+    axis.text.y = element_text(face = "bold")
+  )
 ```
 
 **Explanation**:\
