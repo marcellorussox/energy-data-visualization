@@ -95,17 +95,15 @@ get_continent <- function(country) {
 **Question**: Is there a relationship between GDP and per capita energy consumption?
 
 ```{r plot1}
-# Preparazione dati
 top10_total <- energy_data %>%
   filter(year == 2018) %>%
   mutate(
     energy_per_capita = round(energy_per_capita, 0),
-    label_text = paste0(scales::comma(energy_per_capita), " kWh/person")  # Modifica qui
+    label_text = paste0(scales::comma(energy_per_capita), " kWh/person")
   ) %>%
   arrange(desc(primary_energy_consumption)) %>%
   slice_head(n = 10)
 
-# Creazione del plot
 ggplot(top10_total, aes(x = primary_energy_consumption/1000, 
                        y = reorder(country, primary_energy_consumption))) +
   geom_col(fill = "#1f78b4", width = 0.7, alpha = 0.8) +
@@ -117,21 +115,37 @@ ggplot(top10_total, aes(x = primary_energy_consumption/1000,
     fontface = "bold"
   ) +
   scale_x_continuous(
-    name = "Total Energy Consumption (Thousand TWh)",
-    expand = expansion(mult = c(0, 0.3)),
-    labels = scales::comma_format()
+    name = "Thousand TWh",
+    limits = c(0, 40),
+    expand = expansion(mult = c(0, 0.2)),
+    labels = scales::comma_format(),
+    position = "top"
   ) +
   labs(
     title = "Top 10 Energy Consumers (2018)",
-    y = "",
-    subtitle = "Energy per capita calculated as total consumption divided by population"
+    y = ""
   ) +
   theme_minimal() +
   theme(
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.title.position = "plot",
+    plot.title = element_text(
+      face = "bold",
+      size = 14,
+      hjust = 0.01,
+      margin = margin(b = 10, t = 10)
+    ),
     panel.grid.major.y = element_blank(),
-    axis.text.y = element_text(face = "bold", size = 11),
-    plot.title = element_text(face = "bold", size = 14),
-    plot.caption = element_text(color = "gray40", hjust = 0)
+    axis.text.y = element_text(
+      face = "bold", 
+      size = 11,
+      margin = margin(r = 15)
+    ),
+    plot.margin = margin(l = unit(1, "cm"), r = unit(1, "cm")),
+    axis.text.x.top = element_text(
+      hjust = 0,
+      margin = margin(b = 5))
   )
 
 ggsave("plots/top10_energy_consumers.png", width = 12, height = 7, dpi = 300)
