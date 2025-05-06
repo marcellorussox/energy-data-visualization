@@ -20,17 +20,25 @@ library(ggrepel)
 library(rnaturalearth)
 library(sf)
 
-# Load data
 tuesdata <- tidytuesdayR::tt_load(2023, week = 23)
 
 energy_data <- tuesdata$'owid-energy'
 energy_data <- energy_data %>%
   filter(
-    !grepl("\\(", country),         # esclude "Africa (BP)", ecc.
-    !grepl("-", country),           # esclude "IEO - Africa (EIA)", ecc.
+    !grepl("\\(", country),
+    !grepl("-", country),
     !country %in% c("Africa", "Asia", "Europe", "North America", "South America", "Oceania", "World"),
     !grepl("G7|G20|OECD|OPEC|income|region|Union|BP|EIA|Ember", country)
   )
+```
+
+------------------------------------------------------------------------
+
+```{r utils}
+# Palette
+black_clr = "grey20"
+white_clr = "#fafafa"
+grey_clr = "#424242"
 
 get_continent <- function(country) {
   europe <- c("Italy", "France", "Germany", "Spain", "Portugal", "Netherlands", "Belgium",
@@ -92,7 +100,7 @@ get_continent <- function(country) {
 
 ## Plot 1: Top 10 Energy Consumers (2018)
 
-**Question**: Is there a relationship between GDP and per capita energy consumption?
+**Question**: Which are the countries that consume most and what is the consumption per capita?
 
 ```{r plot1}
 top10_total <- energy_data %>%
@@ -101,23 +109,22 @@ top10_total <- energy_data %>%
     energy_per_capita = round(energy_per_capita, 0),
     label_text = paste0(scales::comma(energy_per_capita), " kWh/person")
   ) %>%
-  arrange(desc(primary_energy_consumption)) %>%
+  arrange(desc(electricity_demand)) %>%
   slice_head(n = 10)
 
-ggplot(top10_total, aes(x = primary_energy_consumption/1000, 
-                       y = reorder(country, primary_energy_consumption))) +
+ggplot(top10_total, aes(x = electricity_demand/1000, 
+                       y = reorder(country, electricity_demand))) +
   geom_col(fill = "#1f78b4", width = 0.7, alpha = 0.8) +
   geom_text(
     aes(label = label_text),
     hjust = -0.1,
-    color = "black",
+    color = grey_clr,
     size = 4,
     fontface = "bold"
   ) +
   scale_x_continuous(
-    name = "Thousand TWh",
-    limits = c(0, 40),
-    expand = expansion(mult = c(0, 0.2)),
+    name = "PWh",
+    limits = c(0, 8),
     labels = scales::comma_format(),
     position = "top"
   ) +
@@ -127,38 +134,42 @@ ggplot(top10_total, aes(x = primary_energy_consumption/1000,
   ) +
   theme_minimal() +
   theme(
-    plot.background = element_rect(fill = "white", color = NA),
-    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = white_clr, color = NA),
+    panel.background = element_rect(fill = white_clr, color = NA),
     plot.title.position = "plot",
     plot.title = element_text(
       face = "bold",
-      size = 14,
-      hjust = 0.01,
-      margin = margin(b = 10, t = 10)
+      size = 16,
+      hjust = 0,
+      margin = margin(b = 15),
+      colour = black_clr
     ),
-    panel.grid.major.y = element_blank(),
+    axis.title.x = element_text(
+      face = "bold",
+      colour = black_clr
+    ),
+    axis.text.x.top = element_text(
+      margin = margin(10)
+    ),
     axis.text.y = element_text(
       face = "bold", 
-      size = 11,
-      margin = margin(r = 15)
+      size = 12,
+      margin = margin(r = 5),
+      colour = grey_clr,
     ),
-    plot.margin = margin(l = unit(1, "cm"), r = unit(1, "cm")),
-    axis.text.x.top = element_text(
-      hjust = 0,
-      margin = margin(b = 5))
+    panel.grid.major.y = element_blank(),
+    
+    plot.margin = margin(1, 1, 1, 1, "cm")
   )
 
-ggsave("plots/top10_energy_consumers.png", width = 12, height = 7, dpi = 300)
+ggsave("plots/1_top10_energy_consumers.png", width = 15, height = 9, dpi = 300, bg = white_clr)
 ```
 
-**Explanation**:\
-- We use a **scatter plot** to explore the relationship between GDP and energy consumption.\
-- Points are colored by `fossil_share_energy` to show how fossil fuel dependency influences the trend.\
-- Outliers (top 10% energy consumers) are labeled using `ggrepel` for clarity.
+**Explanation**
 
 ------------------------------------------------------------------------
 
-## Plot 2: GDP vs. Per Capita Energy Consumption
+## Plot 2: GDP per vs. Per Capita Energy Consumption
 
 ```{r plot2}
 # Data processing corretto
@@ -179,34 +190,63 @@ plot1data <- energy_data %>%
 # Plot con scala lineare
 ggplot(plot1data, aes(x = gdp_per_capita, y = energy_per_capita, color = continent)) +
   geom_point(alpha = 0.8, size = 3) +
-  geom_smooth(method = "lm", se = FALSE, color = "black", linetype = "dashed") +
+  geom_smooth(method = "lm", se = FALSE, color = grey_clr, linetype = "dashed") +
   scale_x_log10(
-    name = "GDP per capita (USD, log scale)",
+    name = "GDP p.c (USD)",
     labels = scales::dollar_format(accuracy = 1),
-    breaks = c(200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000),
-    limits = c(200, 150000)
+    breaks = c(500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000),
+    limits = c(500, 100000)
   ) +
   scale_y_log10(
-    name = "Energy use per capita (kWh, log scale)",
+    name = "Energy p.c (kWh)",
     labels = scales::comma_format(),
-    breaks = c(100, 300, 1000, 3000, 10000, 30000, 100000, 200000),
-    limits = c(100, 200000)
+    breaks = c(200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000),
+    limits = c(200, 200000)
   ) +
   scale_color_brewer(palette = "Set1") +
   labs(
-    title = "Energy Consumption vs Economic Output (2018)",
-    subtitle = "Log-log scale clarifies the power-law distribution",
+    title = "Energy use per capita vs GDP per capita (2018, log-log scale)",
     color = "Continent"
   ) +
   theme_minimal() +
   theme(
     legend.position = "bottom",
+    plot.title = element_text(
+      face = "bold",
+      size = 20,
+      hjust = 0,
+      margin = margin(b = 15)
+    ),
+    axis.title.x = element_text(
+      face = "bold",
+      size = 16,
+      margin = margin(t = 15, b = 10)
+    ),
+    axis.text.x = element_text(
+      size = 14
+    ),
+    axis.title.y = element_text(
+      face = "bold",
+      size = 16,
+      margin = margin(r = 15, l = 10)
+    ),
+    axis.text.y = element_text(
+      size = 14
+    ),
     plot.title.position = "plot",
+    legend.title = element_text(
+      face = "bold",
+      size = 16
+    ),
+    legend.text = element_text(
+      size = 14
+    ),
     plot.margin = margin(1, 1, 1, 1, "cm"),
-    axis.title = element_text(face = "bold")
+    panel.background = element_rect(fill = white_clr, color = NA),
+    plot.background = element_rect(fill = white_clr, color = NA)
   )
 
-ggsave("plots/energy_gdp_plot.png", width = 10, height = 7, dpi = 300, bg = "white")
+ggsave("plots/2_energy_gdp_plot.png", width = 16, height = 9, dpi = 300, bg = white_clr)
 ```
 
 ------------------------------------------------------------------------
@@ -223,30 +263,66 @@ plot3_data <- energy_data %>%
   drop_na(carbon_intensity_elec, fossil_share_energy)
 
 ggplot(plot3_data, aes(x = fossil_share_energy, y = carbon_intensity_elec, color = continent)) +
-  geom_point() +
+  geom_point(size = 3, alpha = 0.8) +
   geom_text_repel(
     data = subset(plot3_data, carbon_intensity_elec > 500 & fossil_share_energy < 50),
-    aes(label = country), size = 3
+    aes(label = country), 
+    size = 3.5,
+    box.padding = 0.5,
+    max.overlaps = 20
   ) +
   scale_color_brewer(palette = "Set1") +
+  scale_x_continuous(
+    name = "Fossil Fuel Share of Energy (%)",
+    limits = c(0, NA),  # Asse X parte da 0
+    expand = expansion(mult = c(0, 0.05))  # NO '+' QUI
+  ) +  # Parentesi chiusa corretta
   labs(
     title = "Carbon Intensity vs. Fossil Fuel Dependency",
-    x = "Fossil Fuel Share of Energy (%)",
-    y = "Carbon Intensity (gCO₂/kWh)"
+    y = expression(bold(paste("Carbon Intensity (", gCO[2]/kWh, ")"))),
+    color = "Continent"
   ) +
-  theme_minimal()
+  theme_minimal() +
+  theme(
+    plot.background = element_rect(fill = white_clr, color = NA),
+    panel.background = element_rect(fill = white_clr, color = NA),
+    plot.title.position = "plot",
+    plot.title = element_text(
+      face = "bold",
+      size = 20,
+      hjust = 0,
+      margin = margin(b = 15)
+    ),
+    axis.title = element_text(face = "bold", color = black_clr, size = 16),
+    axis.title.x = element_text(margin = margin(t = 15, b = 10)),
+    axis.title.y = element_text(margin = margin(r = 15, l = 10)),
+    axis.text = element_text(
+      color = grey_clr,
+      size = 14
+    ),
+    legend.position = "bottom",
+    legend.title = element_text(
+      face = "bold",
+      size = 16),
+    legend.text = element_text(
+      size = 14,
+      colour = grey_clr
+    ),
+    panel.grid.minor = element_blank(),
+    plot.margin = margin(1, 1, 1, 1, "cm")
+  )
 
-ggsave("plots/carbon_fossil_plot.png", width = 10, height = 7, dpi = 300, bg = "white")
+ggsave("plots/3_carbon_fossil_plot.png", width = 10, height = 10, dpi = 300, bg = white_clr)
 ```
 
 ------------------------------------------------------------------------
 
-## Plot 4: Distribuzione continua della quota rinnovabile (2018)
+## Plot 4: Renewables share distribution in the world (2018)
 
 ```{r plot4}
 renewable_2018 <- energy_data %>%
-  filter(year == 2018) %>%           # Filtra solo l'anno 2018
-  drop_na(renewables_share_elec)     # Rimuove righe con valori mancanti
+  filter(year == 2018) %>%
+  drop_na(renewables_share_elec)
 
 ggplot(renewable_2018, aes(x = renewables_share_elec)) +
   geom_density(
@@ -262,42 +338,75 @@ ggplot(renewable_2018, aes(x = renewables_share_elec)) +
     linewidth = 1
   ) +
   scale_x_continuous(
-    name = "Quota di energia rinnovabile (%)",
+    name = "Renewable Energy Share (%)",
     limits = c(0, 100),
-    labels = scales::percent_format(scale = 1)
+    labels = scales::percent_format(scale = 1),
+    expand = c(0, 0)
   ) +
   scale_y_continuous(
-    name = "Densità",
+    name = "Density",
     labels = scales::comma_format()
   ) +
   labs(
-    title = "Distribuzione continua della quota rinnovabile (2018)",
+    title = "Global Renewable Energy Share Distribution (2018)",
     subtitle = paste(
-      "Curva di densità | Mediana =", 
+      "Density curve | Median =", 
       round(median(renewable_2018$renewables_share_elec), 1), "%"
     )
   ) +
   theme_minimal() +
   theme(
-    plot.title = element_text(face = "bold", size = 14),
-    panel.grid.minor = element_blank()
+    plot.background = element_rect(fill = white_clr, color = NA),
+    panel.background = element_rect(fill = white_clr, color = NA),
+    plot.title.position = "plot",
+    plot.title = element_text(
+      face = "bold",
+      size = 20,
+      hjust = 0,
+      colour = black_clr,
+      margin = margin(b = 10)
+    ),
+    plot.subtitle = element_text(
+      hjust = 0,
+      margin = margin(b = 15),
+      size = 16,
+      colour = grey_clr,
+    ),
+    axis.title = element_text(
+      face = "bold",
+      color = black_clr,
+      size = 16
+    ),
+    axis.title.x = element_text(
+      margin = margin(t = 15, b = 10)
+    ),
+    axis.title.y = element_text(
+      margin = margin(r = 15, l = 10)
+    ),
+    axis.text = element_text(
+      color = grey_clr,
+      size = 14
+    ),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.margin = margin(1, 1, 1, 1, "cm")
   )
 
-ggsave("plots/renewable_distribution_plot.png", width = 10, height = 7, dpi = 300, bg = "white")
+ggsave("plots/4_renewable_distribution_plot.png", width = 19, height = 9, dpi = 300, bg = white_clr)
 ```
 
 ------------------------------------------------------------------------
 
-## Plot 5: Renewables share map
+## Plot 5: Global Renewable Energy Share Map (2018)
 
 ```{r plot5}
-# 1. Correzione manuale degli ISO codes problematici
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
 iso_corrections <- tibble(
   iso_a3 = c("FRA", "NOR", "SMR", "MCO", "LIE", "AND", "CUW", "SXM"),
-  correct_iso = c("FRA", "NOR", "SMR", "MCO", "LIE", "AND", "CUW", "SXM") # Esempio: nessun cambio se già corretti
+  correct_iso = c("FRA", "NOR", "SMR", "MCO", "LIE", "AND", "CUW", "SXM")
 )
 
-# 2. Unione dati con correzioni
 energy_map <- world %>%
   left_join(iso_corrections, by = "iso_a3") %>%
   mutate(iso_merged = coalesce(correct_iso, iso_a3)) %>%
@@ -307,7 +416,6 @@ energy_map <- world %>%
       select(iso_code, renewables_share_elec),
     by = c("iso_merged" = "iso_code")
   ) %>%
-  # 3. Correzione manuale per paesi speciali
   mutate(
     renewables_share_elec = case_when(
       name == "Norway" ~ energy_data$renewables_share_elec[energy_data$country == "Norway" & energy_data$year == 2018],
@@ -316,30 +424,51 @@ energy_map <- world %>%
     )
   )
 
-# 4. Verifica finale
-missing_after <- energy_map %>% 
-  filter(is.na(renewables_share_elec)) %>% 
-  pull(name) %>% 
-  unique()
-
-cat("Paesi ancora mancanti dopo le correzioni:\n", paste(missing_after, collapse = ", "))
-
-# 5. Creazione mappa
 ggplot(energy_map) +
-  geom_sf(aes(fill = renewables_share_elec), color = "white", size = 0.2) +
+  geom_sf(aes(fill = renewables_share_elec), color = white_clr, linewidth = 0.2) +
   scale_fill_gradient(
-    name = "Quota rinnovabili (%)",
+    name = "Renewables share (%)",
     low = "grey90",  
     high = "#005a32",
     na.value = "grey70",
     limits = c(0, 100),
-    labels = scales::percent_format(scale = 1)
+    labels = scales::percent_format(scale = 1),
+    guide = guide_colorbar(
+      barwidth = 1.8,
+      barheight = 25,
+      direction = "vertical",
+      show.title = FALSE,
+      label.hjust = 0.5,
+      ticks.linewidth = 1.5
+    )
   ) +
-  labs(title = "Quota di energia rinnovabile (2018)") +
-  theme_void()
+  labs(
+    title = "Global Renewable Energy Share Map (2018)"
+  ) +
+  theme_void() +
+  theme(
+    plot.background = element_rect(fill = white_clr, color = NA),
+    plot.title = element_text(
+      face = "bold",
+      size = 22,
+      hjust = 0,
+      colour = black_clr,
+      margin = margin(b = 10, l = 10)
+    ),
+    legend.title = element_blank(),
+    legend.position.inside = c(1.1, 0.5),
+    legend.text = element_text(
+      size = 14,
+      colour = grey_clr
+    ),
+    plot.margin = margin(1, 1, 1, 1, "cm")
+  )
 
-# Salva in alta risoluzione
-ggsave("world_renewables_map.png", width = 16, height = 9, dpi = 600, bg = "white")
+ggsave("plots/5_world_renewables_map.png", 
+       width = 18,
+       height = 9, 
+       dpi = 600, 
+       bg = white_clr)
 ```
 
 ------------------------------------------------------------------------
@@ -349,30 +478,19 @@ ggsave("world_renewables_map.png", width = 16, height = 9, dpi = 600, bg = "whit
 **Question**: Which countries lead in solar and wind energy adoption?
 
 ```{r plot6}
-# Step 1: Filtra e prepara dati correttamente
-threshold_twh <- 250
-
 top_5 <- energy_data %>%
   filter(year == 2018) %>%
-  filter(
-    renewables_electricity >= threshold_twh,
-    !is.na(renewables_share_elec)
-  ) %>%
-  select(
-    country, 
-    solar_share_elec, 
-    wind_share_elec,
-    hydro_share_elec,
-    other_renewables_share_elec, 
-    renewables_share_elec
-  ) %>%
-  slice_max(order_by = renewables_share_elec, n = 5) %>% 
-  mutate(country = fct_reorder(country, renewables_share_elec, .desc = TRUE))  # Ordine decrescente
+  slice_max(order_by = electricity_generation, n = 5) %>% 
+  arrange(desc(renewables_share_elec)) %>%
+  mutate(
+    country = fct_reorder(country, renewables_share_elec),
+    electricity_label = paste0(round(electricity_generation/1000, 1))
+  )
 
-# Step 2: Pivot
 top_5_long <- top_5 %>%
   pivot_longer(
-    cols = -country,
+    cols = c(solar_share_elec, wind_share_elec, hydro_share_elec, 
+             other_renewables_share_elec, renewables_share_elec),
     names_to = "source",
     values_to = "value"
   ) %>%
@@ -385,7 +503,7 @@ top_5_long <- top_5 %>%
                     "renewables_share_elec" = "Total")
   )
 
-# Step 3: Offset
+
 top_5_long <- top_5_long %>%
   mutate(
     y_offset = case_when(
@@ -397,46 +515,90 @@ top_5_long <- top_5_long %>%
     )
   )
 
-# Step 4: Plot con ordinamento corretto
 ggplot(top_5_long, aes(x = value, y = y_offset, color = source)) +
   geom_segment(aes(x = 0, xend = value, y = y_offset, yend = y_offset), 
                linewidth = 1.5, alpha = 0.9) +
   geom_point(size = 4.5, shape = 19) +
+  geom_text(
+    data = distinct(top_5, country, electricity_label, renewables_share_elec),
+    aes(
+      x = 20,
+      y = as.numeric(country),
+      label = paste0(top_5$electricity_label, " PWh")
+    ),
+    inherit.aes = FALSE,
+    hjust = 0,
+    size = 4.5,
+    fontface = "bold",
+    color = grey_clr,
+    lineheight = 0.8
+  ) +
   scale_x_continuous(
-    limits = c(0, 100),
-    breaks = seq(0, 100, 20),
-    name = "Quota di energia rinnovabile (%)",
+    limits = c(0, 27),
+    breaks = seq(0, 30, 5),
     position = "top"
   ) +
   scale_y_continuous(
     breaks = 1:5,
-    labels = levels(top_5$country),  # Usa l'ordinamento del fattore
-    expand = expansion(add = 0.8),
-    sec.axis = dup_axis(name = "")
+    labels = levels(top_5$country),
+    expand = expansion(add = 0.2)
   ) +
   scale_color_manual(
-    name = "Fonte",
+    name = "",
     values = c("Solar" = "#FFB14E",
                "Wind" = "#aaaaff",
                "Hydro" = "#0a77B4",
                "Other" = "#cccc00",
-               "Total" = "#2CA02C")
+               "Total" = "#2CA02C"),
+    breaks = c("Solar", "Wind", "Hydro", "Other", "Total")
   ) +
   labs(
-    title = "TOP 5 PAESI PER ENERGIA RINNOVABILE (2018)",
-    subtitle = "Threshold: 250 TWh of renewables production"
+    title = "Renewables Share in the Top 5 Global Energy Producers",
+    subtitle = "Labels show total electricity production (renewable + non-renewable)",
+    y = ""
   ) +
   theme_minimal() +
   theme(
-    axis.text.y.left = element_blank(),
-    axis.text.y.right = element_text(face = "bold", size = 12, margin = margin(l = 10)),
-    axis.title.x.top = element_text(size = 12),
-    legend.position = "bottom",
-    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
-    plot.subtitle = element_text(hjust = 0.5, size = 12)
+    plot.background = element_rect(fill = white_clr, color = NA),
+    panel.background = element_rect(fill = white_clr, color = NA),
+    axis.title.x.top = element_blank(),
+    axis.text.y = element_text(
+      face = "bold", 
+      size = 14,
+      colour = grey_clr
+    ),
+    axis.text.x = element_text(
+      size = 14, 
+    ),
+    plot.title = element_text(
+      face = "bold",
+      colour = black_clr,
+      size = 20, 
+      hjust = 0,
+      margin = margin(b = 10)
+    ),
+    plot.title.position = "plot",
+    plot.subtitle = element_text(
+      hjust = 0,
+      size = 14, 
+      color = grey_clr,
+      margin = margin(b = 15)
+    ),
+    legend.text = element_text(
+      size = 14,
+      colour = grey_clr
+    ),
+    plot.margin = margin(1, 1, 1, 1, "cm"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    legend.position = "bottom"
   )
 
-ggsave("plots/renewable_leaders_plot.png", width = 12, height = 8, dpi = 300)
+ggsave("plots/6_renewable_leaders_plot.png", 
+       width = 16, 
+       height = 9, 
+       dpi = 300, 
+       bg = white_clr)
 ```
 
 **Explanation**:\
@@ -473,7 +635,7 @@ ggplot(plot3, aes(x = year, y = renewable_share, color = country)) +
   ) +
   scale_x_continuous(breaks = seq(min(plot3$year), max(plot3$year), by = 5))  # Adjust x-axis breaks
 
-ggsave("plots/renewable_ita_spa_pol.png", width = 10, height = 7, dpi = 300, bg = "white")
+ggsave("plots/renewable_ita_spa_pol.png", width = 10, height = 7, dpi = 300, bg = white_clr)
 ```
 
 **Explanation**:\
@@ -495,9 +657,9 @@ plot6_lollipop <- energy_data %>%
   filter(continent != "Unknown") %>%
   group_by(continent) %>%
   summarise(
-    fossil = mean(fossil_share_energy, na.rm = TRUE),
-    renewables = mean(renewables_share_energy, na.rm = TRUE),
-    nuclear = mean(nuclear_share_energy, na.rm = TRUE)
+    fossil = sum(fossil_electricity, na.rm = TRUE),
+    renewables = sum(renewables_electricity, na.rm = TRUE),
+    nuclear = sum(nuclear_electricity, na.rm = TRUE)
   ) %>%
   pivot_longer(
     cols = -continent,
@@ -546,6 +708,7 @@ ggplot(plot6_lollipop, aes(x = share, y = y_offset, color = source)) +
     plot.title = element_text(face = "bold", size = 14)
   )
 
+ggsave("plots/continent_energy_mix.png", width = 10, height = 7, dpi = 300, bg = white_clr)
 ```
 
 **Explanation**:\
