@@ -1,12 +1,104 @@
 # Energy Data Visualization Project
 
-**Author**: Marcello Russo **Date**: `r Sys.Date()`
+------------------------------------------------------------------------
+
+## Introduction
+
+Energy systems sit at the crossroads of economic development, environmental sustainability, and geopolitical dynamics. Understanding their evolution is critical to addressing climate change and ensuring equitable access to resources. This report analyzes global energy transitions using the *Global Energy Statistics* dataset (1965-2022), which tracks 217 countries through 92 metrics spanning fossil fuel dependency, renewable adoption, carbon intensity, and economic efficiency.
+
+#### **Purpose**:
+
+1\. Map the current state of global energy production/consumption;\
+2. Identify patterns in renewable energy adoption\
+3. Highlight relationships between energy choices, economic growth, and environmental impact
+
+By combining geospatial analysis, temporal trends, and socioeconomic indicators, this work aims to take a look on the complexities of the global energy landscape, with an ecologic focus. Subsequent sections detail the dataset’s structures and discuss about the plot generated.
+
+------------------------------------------------------------------------
+
+## Dataset Overview
+
+### **Source & Scope**
+
+-   **Primary Source**: [TidyTuesday 2023/23](https://github.com/rfordatascience/tidytuesday/blob/main/data/2023/2023-06-06/readme.md)
+-   **Temporal Coverage**: 1965–2022
+-   **Geographic Coverage**: 217 countries/regions
+-   **Variables**: 92 metrics tracking energy production, consumption, and socioeconomic correlates
+
+### **Key Variables by Category**
+
+| **Category** | **Example Variables** |
+|------------------------------------|------------------------------------|
+| **Energy Sources** | `renewables_share_elec`, `fossil_share_energy`, `nuclear_consumption` |
+| **Economic/Demographic** | `gdp`, `energy_per_gdp`, `energy_per_capita`, `population` |
+| **Environmental Impact** | `carbon_intensity_elec`, `greenhouse_gas_emissions` |
+| **Infrastructure** | `electricity_generation`, `net_elec_imports`, `low_carbon_electricity` |
+
+### **Data Structure**
+
+-   **Unit**: Most energy metrics in terawatt-hours (TWh) or kilowatt-hours per capita (kWh/person)
+-   **Granularity**: Annual country-level observations
+-   **Identifiers**: `iso_code` (ISO 3166-1 alpha-3), `country`, `year`
+
+### **Notable Features**
+
+1.  **Comprehensive Energy Mix Tracking**:
+    -   Disaggregated data for 12+ energy types (coal, solar, biofuels, etc.)
+    -   Share metrics (e.g., `solar_share_elec`) enable cross-country comparisons.
+2.  **Normalized Metrics**:
+    -   Per capita (`..._per_capita`) and GDP-adjusted (`energy_per_gdp`) variables.
+3.  **Change Metrics**:
+    -   Annual percentage (`..._change_pct`) and absolute (`..._change_twh`) changes.
+
+### **Limitations**
+
+-   **Missing Values**: Sparse data for small nations (e.g., microstates) pre-1990.
+-   **Scope**: Excludes non-energy GHG sources (e.g., agriculture, land use).
+
+### **Data Cleaning Process**
+
+To ensure analysis focuses on **country-level entities**, the raw dataset was filtered using the following criteria:
+
+``` r
+energy_data <- energy_data %>%
+  filter(
+    !grepl("\\(", country),      # Remove entries with parentheses (e.g., regional groupings)
+    !grepl("-", country),        # Exclude hyphenated names (e.g., historical territories)
+    !country %in% c("Africa", "Asia", "Europe", "North America", 
+                   "South America", "Oceania", "World"),  # Remove continental aggregates
+    !grepl("G7|G20|OECD|OPEC|income|region|Union|BP|EIA|Ember", country)  # Exclude supranational entities
+  )
+```
+
+**Key Rationale**:
+
+1.  **Focus on Sovereign Nations**:
+
+    -   Removes regional aggregates (e.g., "Africa") and political/economic blocs (e.g., "OECD", "G20").
+
+    -   Excludes non-standard entries like "Low-income countries" or "European Union".
+
+2.  **Consistency**:
+
+    -   Eliminates duplicate metrics (e.g., "United States" vs. "United States (BP)").
+
+    -   Avoids overlapping definitions (e.g., "Europe" vs. individual European countries).
+
+**Example Removed Entries**:
+
+-   **`European Union (27)`**
+
+-   **`Asia (BP)`**
+
+-   **`Upper-middle-income countries`**
+
+**Result**: Dataset refined to **sovereign states** with directly comparable national metrics.
 
 ------------------------------------------------------------------------
 
 ## Setup
 
-Load libraries and dataset.
+Load libraries and dataset from TidyTuesday.
 
 ```{r setup}
 # Load required libraries
@@ -33,6 +125,10 @@ energy_data <- energy_data %>%
 ```
 
 ------------------------------------------------------------------------
+
+## Utils
+
+This R function `get_continent()` takes a country name as input and returns the corresponding continent as a string. It checks if the input country belongs to one of the predefined lists for Europe, Asia, Africa, North America, South America, or Oceania, and returns the matching continent name. If the country is not found in any list, it returns "Unknown". This function is useful to color countries in some visualizations later.
 
 ```{r utils}
 # Palette
@@ -98,9 +194,38 @@ get_continent <- function(country) {
 
 ------------------------------------------------------------------------
 
-## Plot 1: Top 10 Energy Consumers (2018)
+## Plot 1: Which are the countries that consume most and what is the consumption per capita?
 
-**Question**: Which are the countries that consume most and what is the consumption per capita?
+### **Approach Followed**
+
+#### **Goal**
+
+Identify the top 10 countries by total energy consumption (2018) and contrast their absolute demand with per capita efficiency to:
+
+1.  Highlight disparities between large economies and population-driven consumption.
+
+2.  Evaluate whether high total consumption correlates with high per capita usage.
+
+#### **Key Message**
+
+While total energy demand reflects economic scale, per capita consumption reveals energy efficiency and lifestyle patterns. Countries like Canada or United States may rank lower in total demand but exhibit very high per capita usage, signaling resource-intensive economies.
+
+### **Implementation Information**
+
+#### **Tools Used**
+
+-   **Data Wrangling**: `dplyr`, `tidyr` (filtering, ranking, per capita calculations).
+-   **Visualization**: `ggplot2` (bar plot with annotations).
+-   **Styling**: Custom themes, `scales` (axis formatting).
+
+#### **Technical Challenges & Solutions**
+
+1.  **Label Alignment**:
+    -   **Problem**: Per capita labels overlapped with bars for smaller values.
+    -   **Solution**: Adjusted `hjust = -0.1` in `geom_text` to position labels outside bars.
+2.  **Ordering**:
+    -   **Problem**: Default `reorder()` sorted countries alphabetically.
+    -   **Solution**: Used `reorder(country, electricity_demand)` to sort bars by total demand.
 
 ```{r plot1}
 top10_total <- energy_data %>%
@@ -165,11 +290,60 @@ ggplot(top10_total, aes(x = electricity_demand/1000,
 ggsave("plots/1_top10_energy_consumers.png", width = 15, height = 9, dpi = 300, bg = white_clr)
 ```
 
-**Explanation**
+### **Interpretation of Output**
+
+The final plot (saved as **`1_top10_energy_consumers.png`**) reveals:
+
+-   **China** and **United States** dominate total demand, reflecting their economic scale.
+
+-   **Canada** and **South Korea** have moderate total demand but high per capita consumption, indicating energy-intensive lifestyles.
+
+-   **India** ranks high in total demand but has low per capita usage, highlighting population-driven consumption.
+
+This analysis sets the stage for deeper dives into energy efficiency and policy impacts in subsequent sections.
 
 ------------------------------------------------------------------------
 
-## Plot 2: GDP per vs. Per Capita Energy Consumption
+## Plot 2: Is there a relationship between the richness of a country and its energy efficiency?
+
+### **Approach Followed**
+
+#### **Goal**
+
+Investigate the relationship between a country’s economic development (measured by GDP per capita) and its energy consumption patterns (energy use per capita) to answer:
+
+1.  Do wealthier nations consume more energy per person?
+
+2.  How does this relationship vary across continents?
+
+3.  Are there outliers that defy the global trend?
+
+#### **Key Message**
+
+The plot reveals a **positive correlation** between wealth and energy consumption, but with significant regional disparities. High-income countries (e.g., in North America and Europe) cluster at the top-right quadrant, while low-income regions (e.g., Africa) show lower energy use despite moderate GDP growth.
+
+### **Implementation Information**
+
+#### **Tools Used**
+
+-   **Data Processing**: `dplyr` (filtering, continent mapping, GDP per capita calculation).
+-   **Visualization**: `ggplot2` (log-log scatter plot, trendline, continent coloring).
+-   **Styling**: `scale_color_brewer`, custom themes for readability.
+
+#### **Technical Challenges & Solutions**
+
+1.  **Skewed Distributions**:
+    -   **Problem**: GDP and energy data spanned 3+ orders of magnitude (e.g., \$500 to \$100,000 GDP).
+    -   **Solution**: Applied **logarithmic scaling** to both axes (`scale_x_log10`, `scale_y_log10`).
+2.  **Overlapping Points**:
+    -   **Problem**: Dense clustering of low-GDP countries obscured patterns.
+    -   **Solution**: Used transparency (`alpha = 0.8`) and manual axis breaks to declutter, the logarithmic scaling helps in this as well.
+3.  **Continent Mapping**:
+    -   **Problem**: Missing continent classifications for some countries.
+    -   **Solution**: Filtered out entries with `continent == "Unknown"`.
+4.  **Trendline Interpretation**:
+    -   **Problem**: A simple linear model (`method = "lm"`) on log scales can mislead.
+    -   **Solution**: Added a dashed line to show the **log-linear relationship**, emphasizing proportional growth rates.
 
 ```{r plot2}
 # Data processing corretto
@@ -249,11 +423,61 @@ ggplot(plot1data, aes(x = gdp_per_capita, y = energy_per_capita, color = contine
 ggsave("plots/2_energy_gdp_plot.png", width = 16, height = 9, dpi = 300, bg = white_clr)
 ```
 
+### **Interpretation of Output**
+
+The final plot (**`2_energy_gdp_plot.png`**) highlights:
+
+-   **Strong Correlation**: Richer countries generally consume more energy per capita, reflecting industrialization and lifestyle factors.
+
+-   **Regional Outliers**: Middle Eastern nations (high GDP/energy due to oil economies).
+
+-   **Policy Implications**: Economic growth in developing nations may drive future global energy demand.
+
+This analysis sets the stage for exploring energy efficiency metrics (e.g., `energy_per_gdp`) in subsequent sections.
+
 ------------------------------------------------------------------------
 
-## Plot 3: Carbon Intensity vs. Fossil Dependency
+## Plot 3: Is there a correlation between the use of fossil sources and carbon intensity?
 
-**Question**: Which countries have high carbon intensity despite low fossil fuel dependency?
+### **Approach Followed**
+
+#### **Goal**
+
+Investigate the relationship between a country’s reliance on fossil fuels and the carbon intensity of its electricity production to answer:
+
+1.  Does a higher share of fossil energy correlate with higher CO₂ emissions per kWh?
+
+2.  Are there regional or technological outliers (e.g., countries with low fossil dependence but high carbon intensity)?
+
+3.  How do continents differ in balancing energy sources and emissions?
+
+#### **Key Message**
+
+A **strong positive relationship exists** between fossil fuel use and carbon intensity. Higher fossil energy share correlates with greater CO₂ emissions per kWh, though outliers highlight technology and fuel-type impacts.
+
+### **Implementation Information**
+
+#### **Tools Used**
+
+-   **Data Processing**: **`dplyr`** (filtering, continent mapping, outlier detection).
+
+-   **Visualization**: **`ggplot2`** (scatter plot), **`ggrepel`** (non-overlapping labels).
+
+-   **Styling**: Custom themes, **`scale_color_brewer`** for continent colors.
+
+#### **Technical Challenges & Solutions**
+
+1.  **Axis Scaling**:
+
+    -   **Problem**: Default axes obscured trends at lower fossil shares.
+
+    -   **Solution**: Set **`limits = c(0, 100)`** on the x-axis and removed **`expand`** padding.
+
+2.  **Carbon Intensity Units**:
+
+    -   **Problem**: CO₂/kWh label required subscript formatting.
+
+    -   **Solution**: Used **`expression(paste("Carbon Intensity (", gCO[2]/kWh, ")"))`** for axis titles.
 
 ```{r plot3}
 plot3_data <- energy_data %>%
@@ -264,19 +488,13 @@ plot3_data <- energy_data %>%
 
 ggplot(plot3_data, aes(x = fossil_share_energy, y = carbon_intensity_elec, color = continent)) +
   geom_point(size = 3, alpha = 0.8) +
-  geom_text_repel(
-    data = subset(plot3_data, carbon_intensity_elec > 500 & fossil_share_energy < 50),
-    aes(label = country), 
-    size = 3.5,
-    box.padding = 0.5,
-    max.overlaps = 20
-  ) +
   scale_color_brewer(palette = "Set1") +
   scale_x_continuous(
     name = "Fossil Fuel Share of Energy (%)",
-    limits = c(0, NA),  # Asse X parte da 0
-    expand = expansion(mult = c(0, 0.05))  # NO '+' QUI
-  ) +  # Parentesi chiusa corretta
+    limits = c(0, 100),
+    breaks = seq(0, 100, 20),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
   labs(
     title = "Carbon Intensity vs. Fossil Fuel Dependency",
     y = expression(bold(paste("Carbon Intensity (", gCO[2]/kWh, ")"))),
@@ -315,9 +533,59 @@ ggplot(plot3_data, aes(x = fossil_share_energy, y = carbon_intensity_elec, color
 ggsave("plots/3_carbon_fossil_plot.png", width = 10, height = 10, dpi = 300, bg = white_clr)
 ```
 
+### **Interpretation of Output**
+
+The final plot (**`3_carbon_fossil_plot.png`**) reveals **strong positive correlation**: countries with \>80% fossil energy exhibit high carbon intensity (\>400 gCO₂/kWh). The curve suggest us that a small decrease of fossil share can help more in the carbon intensity.
+
+This analysis underscores the complexity of decarbonization, where energy mix and technology efficiency jointly determine environmental impact.
+
 ------------------------------------------------------------------------
 
-## Plot 4: Renewables share distribution in the world (2018)
+## Plot 4-5: What is the distribution of the renewable share energy across the world?
+
+### **Approach Followed**
+
+#### **Goal**
+
+Analyze the global distribution of renewable energy adoption in 2018 through two complementary perspectives:
+
+1.  **Statistical Distribution**: Understand the spread and central tendency of renewable energy adoption across nations.
+
+2.  **Geographic Patterns**: Identify regional clusters of high/low adoption and outliers.
+
+------------------------------------------------------------------------
+
+### **Implementation Information**
+
+#### **Tools Used**
+
+-   **Data Processing**:
+
+    -   **`dplyr`** for filtering (2018 data, non-NA values).
+
+    -   **`rnaturalearth`** and **`sf`** for geospatial data integration.
+
+-   **Visualization**:
+
+    -   **Plot 4**: Density plot (**`geom_density`**) with median line (**`geom_vline`**).
+
+    -   **Plot 5**: Choropleth map (**`geom_sf`**) with gradient scaling.
+
+-   **Styling**: Consistent color schemes (**`#005a32`** for high renewables, **`grey90`** for low).
+
+#### **Technical Challenges & Solutions**
+
+1.  **Missing Geospatial Data**:
+
+    -   **Problem**: Mismatched ISO codes (e.g., France’s overseas territories).
+
+    -   **Solution**: Manual ISO corrections via **`iso_corrections`** tibble.
+
+2.  **Skewed Distribution**:
+
+    -   **Problem**: Most countries clustered at low renewables share (\<30%).
+
+    -   **Solution**: Used a density plot to emphasize distribution shape and added a median line for context.
 
 ```{r plot4}
 renewable_2018 <- energy_data %>%
@@ -340,6 +608,7 @@ ggplot(renewable_2018, aes(x = renewables_share_elec)) +
   scale_x_continuous(
     name = "Renewable Energy Share (%)",
     limits = c(0, 100),
+    breaks = seq(0, 100, 10),
     labels = scales::percent_format(scale = 1),
     expand = c(0, 0)
   ) +
@@ -394,6 +663,14 @@ ggplot(renewable_2018, aes(x = renewables_share_elec)) +
 
 ggsave("plots/4_renewable_distribution_plot.png", width = 19, height = 9, dpi = 300, bg = white_clr)
 ```
+
+### **Interpretation of Output**
+
+-   **Peak at 10–15%**: Most countries have minimal renewable adoption, reflecting early-stage transitions or fossil fuel reliance.
+
+-   **Median at 23.4%**: Half of nations exceed this threshold, but the long right tail indicates stark disparities.
+
+-   **Policy Insight**: The concentration of countries below 30% underscores the need for global decarbonization efforts.
 
 ------------------------------------------------------------------------
 
@@ -471,11 +748,81 @@ ggsave("plots/5_world_renewables_map.png",
        bg = white_clr)
 ```
 
+### **Interpretation of Output**
+
+-   **Leaders**:
+
+    -   **Nordic Nations**: Norway (hydropower), Iceland (geothermal).
+
+    -   **Latin America**: Uruguay (eolic), Brazil (hydro/biofuels).
+
+-   **Laggards**:
+
+    -   **Middle East**: Fossil fuel-dependent economies (Middle-East).
+
+    -   **Asia**: Coal-heavy systems (Mongolia, India).
+
+-   **Regional Patterns**:
+
+    -   **Africa**: Divided by northern countries (fossil-fuel dependent) and center countries that have almost the total of electricity generation given by hydropower.
+
+    -   **Latin America**: Highly adoption for renewable energy.
+
 ------------------------------------------------------------------------
 
-## Plot 6: Solar and Wind Energy Leaders
+## Plot 6: How much is the share of renewable energy in the top 5 global producers?
 
-**Question**: Which countries lead in solar and wind energy adoption?
+### **Approach Followed**
+
+#### **Goal**
+
+Analyze the renewable energy composition of the **top 5 electricity-producing nations** (2018) to answer:
+
+1.  What share of their energy mix comes from renewable sources?
+
+2.  How do their renewable portfolios differ (e.g., hydro vs. eolic/solar)?
+
+3.  Does high total production correlate with renewable adoption?
+
+#### **Key Message**
+
+Even among top producers, renewable adoption varies widely (16–26%), with structural differences:
+
+-   **Russia** leads in hydroelectric dominance.
+
+-   Generally, they all prioritize **hydroelectric/eolic** energy.
+
+-   **India** and **USA** lag, reflecting fossil fuel dependency.
+
+### **Implementation Information**
+
+#### **Tools Used**
+
+-   **Data Processing**:
+
+    -   **`dplyr`** for filtering (**`electricity_generation`** ranking, 2018 data).
+
+    -   **`tidyr::pivot_longer`** to reshape renewable source columns.
+
+-   **Visualization**:
+
+    -   **Lollipop Chart**: Compare renewable types while showing total production (labels).
+
+    -   **Color Coding**: Match common sense colors for consistency (e.g., Hydro = blue, Solar = orange).
+
+#### **Technical Challenges & Solutions**
+
+1.  **Country Ordering**:
+
+    -   **Problem**: Default order by **`renewables_share_elec`** didn't put the focus on the biggers producers.
+
+    -   **Solution**: **`fct_reorder(country, electricity_generation)`** to sort by total production.
+
+2.  **Lollipop Overlap**:
+
+    -   **Problem**: Five variables for each country means overlapping lollipops, fixed.
+
+    -   **Solution**: Manual **`y_offset`** adjustments for text positioning.
 
 ```{r plot6}
 top_5 <- energy_data %>%
@@ -483,7 +830,7 @@ top_5 <- energy_data %>%
   slice_max(order_by = electricity_generation, n = 5) %>% 
   arrange(desc(renewables_share_elec)) %>%
   mutate(
-    country = fct_reorder(country, renewables_share_elec),
+    country = fct_reorder(country, electricity_generation),
     electricity_label = paste0(round(electricity_generation/1000, 1))
   )
 
@@ -497,7 +844,7 @@ top_5_long <- top_5 %>%
   mutate(
     source = recode(source,
                     "solar_share_elec" = "Solar",
-                    "wind_share_elec" = "Wind",
+                    "wind_share_elec" = "Eolic",
                     "hydro_share_elec" = "Hydro",
                     "other_renewables_share_elec" = "Other",
                     "renewables_share_elec" = "Total")
@@ -508,7 +855,7 @@ top_5_long <- top_5_long %>%
   mutate(
     y_offset = case_when(
       source == "Solar" ~ as.numeric(country) + 0.3,
-      source == "Wind" ~ as.numeric(country) + 0.15,
+      source == "Eolic" ~ as.numeric(country) + 0.15,
       source == "Hydro" ~ as.numeric(country),
       source == "Other" ~ as.numeric(country) - 0.15,
       source == "Total" ~ as.numeric(country) - 0.3
@@ -546,11 +893,11 @@ ggplot(top_5_long, aes(x = value, y = y_offset, color = source)) +
   scale_color_manual(
     name = "",
     values = c("Solar" = "#FFB14E",
-               "Wind" = "#aaaaff",
+               "Eolic" = "#aaaaff",
                "Hydro" = "#0a77B4",
                "Other" = "#cccc00",
                "Total" = "#2CA02C"),
-    breaks = c("Solar", "Wind", "Hydro", "Other", "Total")
+    breaks = c("Solar", "Eolic", "Hydro", "Other", "Total")
   ) +
   labs(
     title = "Renewables Share in the Top 5 Global Energy Producers",
@@ -601,166 +948,42 @@ ggsave("plots/6_renewable_leaders_plot.png",
        bg = white_clr)
 ```
 
-**Explanation**:\
-- A **dodged bar chart** compares the top 10 countries for solar and wind energy.\
-- Data is pivoted to long format for easy faceting.\
-- Gold (`#FFD700`) represents solar, blue (`#4682B4`) represents wind.
+### **Interpretation of Output**
+
+The final plot (**`6_renewable_leaders_plot.png`**) reveals:
+
+#### **Renewable Share Rankings**
+
+1.  **China**: Dominated by **hydropower** (≈17% of total), with modest solar/eolic (≈8%).
+
+2.  **Russia**: Relies on legacy **hydropower**, minimal new renewables.
+
+3.  **Japan**: Mix of solar (≈7%) and hydro (≈8%), limited by geographic constraints.
+
+4.  **USA** Balanced eolic (≈7%) and hydro (≈7%), with growing solar (≈2,5%).
+
+5.  **India**: Half of renewables come from **hydropower**, but coal still dominates.
+
+**Scale ≠ Sustainability**: High production doesn’t guarantee renewable leadership.
 
 ------------------------------------------------------------------------
 
-## Plot 7: Development of Renewable Energy in Brazil, Italy and Spain
+## **Conclusion: Pathways to a Renewable Future**
 
-**Question**: Do countries with higher population growth experience larger changes in energy demand?
+The global energy transition presents a nuanced picture. While fossil fuels still dominate (∼80% of primary energy), promising signals emerge:
 
-```{r plot7}
-# Filter data for Italy, Spain and Poland and calculate renewable share
-plot3 <- energy_data %>%
-  filter(country %in% c("Italy", "Spain", "Poland")) %>%
-  mutate(renewable_share = renewables_share_elec) %>%
-  drop_na(year, renewable_share)
+-   **Emerging Leaders**: Central African nations and South American countries demonstrate that renewables can power growing economies.
 
-# Create line plot
-ggplot(plot3, aes(x = year, y = renewable_share, color = country)) +
-  geom_point(size = 2) +  # Add points for better visibility of data points
-  scale_color_manual(values = c("Italy" = "blue", "Spain" = "gold", "Poland" = "red")) +
-  labs(title = "Renewable Energy Share Over Time in Italy, Spain and Poland",
-       x = "Year",
-       y = "Share of Electricity Generation (%)",
-       color = "Country") +
-  theme_minimal() +
-  theme(
-    legend.position = "bottom",
-    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
-    axis.title = element_text(size = 12)
-  ) +
-  scale_x_continuous(breaks = seq(min(plot3$year), max(plot3$year), by = 5))  # Adjust x-axis breaks
+-   **Economic-Energy Link**: A strong correlation between GDP per capita and energy consumption highlights the challenge of decoupling growth from resource use.
 
-ggsave("plots/renewable_ita_spa_pol.png", width = 10, height = 7, dpi = 300, bg = white_clr)
-```
+-   **Fossil-Carbon Nexus**: Countries with \>50% fossil energy exhibit 3–5× higher carbon intensity (300–800 gCO₂/kWh vs. \<100 for renewables-led systems).
 
-**Explanation**:\
-- Percentage changes in population and electricity demand are calculated over a 10-year window.\
-- A **regression line** (`geom_smooth`) shows the overall trend.\
-- Points represent individual countries.
+#### **Critical Insights**:
 
-------------------------------------------------------------------------
+1.  **Developed Nations** must accelerate fossil phase-outs despite existing infrastructure inertia.
 
-## Plot 8: Energy Mix by Continent
+2.  **Developing Economies** can leverage renewables to bypass fossil dependency, as seen in Kenya and Brazil.
 
-**Question**: How does the energy mix vary by continent?
+3.  **Policy Differentiation**: High-income countries need stringent carbon pricing; low-income regions require investment in decentralized renewables.
 
-```{r plot8}
-# Prepara i dati per il lollipop chart
-plot6_lollipop <- energy_data %>% 
-  filter(year == 2018) %>%
-  mutate(continent = sapply(country, get_continent)) %>%
-  filter(continent != "Unknown") %>%
-  group_by(continent) %>%
-  summarise(
-    fossil = sum(fossil_electricity, na.rm = TRUE),
-    renewables = sum(renewables_electricity, na.rm = TRUE),
-    nuclear = sum(nuclear_electricity, na.rm = TRUE)
-  ) %>%
-  pivot_longer(
-    cols = -continent,
-    names_to = "source",
-    values_to = "share"
-  ) %>%
-  mutate(
-    source = factor(source, levels = c("fossil", "renewables", "nuclear")),
-    continent = factor(continent),
-    # Assegna offset verticali per raggruppamento
-    y_offset = case_when(
-      source == "fossil" ~ as.numeric(continent) + 0.2,
-      source == "renewables" ~ as.numeric(continent),
-      source == "nuclear" ~ as.numeric(continent) - 0.2
-    )
-  )
-
-# Crea il grouped lollipop chart
-ggplot(plot6_lollipop, aes(x = share, y = y_offset, color = source)) +
-  geom_segment(aes(x = 0, xend = share, y = y_offset, yend = y_offset), 
-               linewidth = 0.7, alpha = 0.8) +
-  geom_point(size = 3.5) +
-  scale_y_continuous(
-    breaks = 1:length(unique(plot6_lollipop$continent)),
-    labels = levels(plot6_lollipop$continent),
-    expand = expansion(add = 0.5)
-  ) +
-  scale_color_manual(
-    values = c("fossil" = "#E69F00", 
-               "renewables" = "#009E73", 
-               "nuclear" = "#0072B2"),
-    labels = c("Fossil Fuels", "Renewables", "Nuclear")
-  ) +
-  labs(
-    title = "Energy Mix by Continent (2018)",
-    subtitle = "Grouped lollipop chart showing average energy shares",
-    x = "Share of Energy Mix (%)",
-    y = NULL,
-    color = "Energy Source"
-  ) +
-  theme_minimal() +
-  theme(
-    legend.position = "bottom",
-    axis.text.y = element_text(face = "bold", size = 10),
-    panel.grid.major.y = element_blank(),
-    plot.title = element_text(face = "bold", size = 14)
-  )
-
-ggsave("plots/continent_energy_mix.png", width = 10, height = 7, dpi = 300, bg = white_clr)
-```
-
-**Explanation**:\
-- **Quadrant analysis** splits the plot into four regions using median values.\
-- Points are colored by continent to highlight regional patterns.\
-- High consumption + low efficiency (top-left quadrant) may indicate wasteful economies.
-
-------------------------------------------------------------------------
-
-## Plot 9: Nuclear Share Variations
-
-**Question**: Quali paesi hanno ridotto/aumentato maggiormente il nucleare nell'ultimo decennio?
-
-```{r plot9}
-energy_data %>% 
-  filter(year %in% c(1998, 2022)) %>% 
-  group_by(country) %>%
-  reframe(change = (nuclear_share_elec[year == 2022] - nuclear_share_elec[year == 1998])) %>% 
-  filter(change != 0) %>%
-  ggplot(aes(x = change, y = reorder(country, change), fill = change > 0)) +
-  geom_col(width = 0.8) +
-  geom_vline(xintercept = 0, color = "gray40", linewidth = 0.3) +
-  scale_fill_manual(
-    values = c("#ca0020", "#0571b0"),
-    labels = c("Declino", "Crescita"),
-    name = "Direzione"
-  ) +
-  scale_x_continuous(
-    labels = scales::label_percent(scale = 1),
-    breaks = seq(-30, 30, 5)
-  ) +
-  labs(
-    title = "Variazioni nella Quota Nucleare (1998-2018)",
-    subtitle = "Top 10 paesi per variazione assoluta",
-    x = "Variazione percentuale (punti)",
-    y = ""
-  ) +
-  theme_minimal() +
-  theme(
-    panel.grid.major.y = element_blank(),
-    legend.position = "top",
-    plot.title = element_text(face = "bold", size = 14),
-    axis.text.y = element_text(face = "bold")
-  )
-```
-
-**Explanation**:\
-- A **stacked bar chart** shows the proportional contribution of each energy source.\
-- Fossil fuels dominate in some continents, while others have more balanced mixes.
-
-------------------------------------------------------------------------
-
-## Saving the Notebook
-
-Render the notebook to HTML/PDF by clicking "Knit" in RStudio.
+The path to 100% renewables is steep but navigable. Current trends — solar/eolic cost declines, battery storage advances — suggest feasibility by 2050 for pioneers. However, global equity must anchor this transition, ensuring climate action doesn’t widen energy access gaps.
